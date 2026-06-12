@@ -6,6 +6,12 @@
 - configuration is in a config file + .env ONLY, no flags, no memory-only configs
 - linux native
 - supports non-root podman ootb
+- custom tool is easy
+- need extra tools? spin up a new container! firecrawl, blah
+- highly controllable, know what goes in, and comes out
+
+## All agents
+- custom tools are hard!
 
 ## Claude code CLI
 - dislikes
@@ -18,6 +24,7 @@
 - dislike
   - did it reload?
   - does not support other providers
+  - custom tools are HARD
 
 ## Hermes
 - what I like
@@ -33,3 +40,7 @@
   - confusing to configure
     - which configuration goes where again?
   - configuring and reloading. Did it reload yet???
+  - web search and web extract are not natively supported
+
+## Decisions:
+- using python > go since we want immediate reload ability, and I don't want javascript
