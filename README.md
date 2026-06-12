@@ -41,6 +41,3 @@
     - which configuration goes where again?
   - configuring and reloading. Did it reload yet???
   - web search and web extract are not natively supported
-
-## Decisions:
-- using python > go since we want immediate reload ability, and I don't want javascript
