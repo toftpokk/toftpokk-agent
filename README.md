@@ -41,3 +41,6 @@
     - which configuration goes where again?
   - configuring and reloading. Did it reload yet???
   - web search and web extract are not natively supported
+
+## Inspiration
+- hermes-agent (direct inspiration)
