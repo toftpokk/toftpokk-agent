@@ -3,6 +3,7 @@ import logging
 
 import yaml
 from dotenv import load_dotenv, dotenv_values
+import asyncio
 
 from providers import registry
 from core import Message, Provider, Client, AuthMethod
@@ -48,13 +49,11 @@ class Runner:
 
     def __init__(self, client: Client) -> None:
         self.client = client
-    
-    def handle_message_synchronous(self, message: Message) -> None:
-        self.client.handle_message_synchronous(message)
 
-    # def handle_message(self, message: Message) -> None:
-    #     # Core agent loop
-    #     print(message)
+    async def handle_message(self, message: Message) -> None:
+        # TODO check return value
+        messages = [message]
+        await self.client.handle_message(messages)
 
 def main():
     load_dotenv()
@@ -83,6 +82,7 @@ def main():
         base_url=provider.base_url,
         auth_method=provider.auth_method,
         auth_api_key=auth_api_key,
+        adapter_name=provider.adapter,
     )
     
     runner = Runner(client)
@@ -91,7 +91,7 @@ def main():
         try:
             msg = input()
             user_message = Message.from_user(str(running_id), msg)
-            runner.handle_message_synchronous(user_message)
+            asyncio.run(runner.handle_message(user_message))
             break
         except KeyboardInterrupt:
             break

@@ -21,7 +21,7 @@ register_provider(Provider(
 register_provider(Provider(
     name = "minimax",
     display = "MiniMax",
-    base_url="https://api.minimax.io/anthropic/v1/messages",
+    base_url="https://api.minimax.io/anthropic/",
     models=["MiniMax-M2.7"],
     auth_method=AuthMethod.API_KEY,
     auth_api_key_env="MINIMAX_API_KEY",

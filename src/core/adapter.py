@@ -1,14 +1,16 @@
 from anthropic import Anthropic
+import anthropic.types as ant_types
 from enum import Enum
+
+from .core import Message, Role, TextBlock
 
 class Adapter(Enum):
     ANTHROPIC = "anthropic"
     
 class AdapterBase():
-    pass
     # TODO return None is lazy
-    # async def send_message(self, messages: [str], model: str) -> None:
-    #     pass
+    async def send_message(self, messages: [Message], model: str) -> None:
+        pass
 
 class AnthropicAdapter(AdapterBase):
     sdk: Anthropic
@@ -19,17 +21,63 @@ class AnthropicAdapter(AdapterBase):
             base_url=base_url,
         )
     
-    # async def send_message(self, messages: [str], model: str) -> None:
-    #     message = await self.sdk.messages.create(
-    #         max_tokens=1024,
-    #         messages=[],
-    #         model=model,
-    #     )
-    #     print(message.content)
-        
-        
+    def _convert_message_to_ant_param(message: Message) -> ant_types.MessageParam:
+        roles: dict[Role, str] = {
+            Role.USER: "user",
+            Role.ASSISTANT: "assistant" ,
+            Role.SYSTEM: "system" ,
+        }
+        role = roles[message.role]
 
-def adapter_from_name(adapter: Adapter) -> AdapterBase:
-    if adapter == Adapter.ANTHROPIC:
-        return AnthropicAdapter
-    raise Exception(f"unknown adapter '{adapter}'")
+        content = []
+        for block in message.content:
+            match block.type_:
+                case "text":
+                    content.append({
+                        "type": "text",
+                        "text": block.text,
+                    })
+                case t:
+                    raise ValueError(f"unknown content type '{t}'")
+        return {
+            "role": role,
+            "content": content, 
+        }
+
+    def _convert_message_from_ant(message: ant_types.Message) -> Message:
+        roles: dict[str, Role] = {
+            "user": Role.USER,
+            "assistant": Role.ASSISTANT,
+            "system": Role.SYSTEM,
+        }
+        role = roles[message.role]
+
+        content = []
+        for block in message.content:
+            match block.type:
+                case "text":
+                    content.append(TextBlock(
+                        text=block.text,
+                    ))
+                case t:
+                    raise ValueError(f"unknown content type '{t}'")
+
+        return Message(
+            message_id=message.id,
+            role=role,
+            content=content
+        )
+
+    
+    
+    async def send_message(self, messages: [Message], model: str) -> None:
+        ant_msgs: [ant_types.MessageParam] = []
+        for msg in messages:
+            ant_msg = AnthropicAdapter._convert_message_to_ant_param(msg)
+            ant_msgs.append(ant_msg)
+        message = self.sdk.messages.create(
+            max_tokens=1024,
+            messages=ant_msgs,
+            model=model,
+        )
+        print(message)

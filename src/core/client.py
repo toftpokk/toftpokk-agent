@@ -2,7 +2,7 @@ import importlib.metadata
 from typing import Optional
 
 from .core import AuthMethod, Message
-from .adapter import Adapter, AdapterBase, adapter_from_name
+from .adapter import Adapter, AdapterBase, AnthropicAdapter
 
 class Client():
     """
@@ -14,7 +14,7 @@ class Client():
     base_url: str
     auth_method: AuthMethod
     auth_api_key: Optional[str]
-    adapter: Optional[AdapterBase]
+    adapter: AdapterBase
 
     def __init__(
         self, 
@@ -23,7 +23,7 @@ class Client():
         base_url: str,
         auth_method: AuthMethod,
         auth_api_key: Optional[str] = None,
-        adapter: Optional[Adapter] = None,
+        adapter_name: Optional[Adapter] = None,
     ) -> None:
         self.model = model
         self.provider_name = provider_name
@@ -31,12 +31,20 @@ class Client():
         self.auth_method = auth_method
         self.auth_api_key = auth_api_key
 
+        adapter: AdapterBase = None
+        if adapter_name == Adapter.ANTHROPIC:
+            if self.auth_method != AuthMethod.API_KEY:
+                raise Exception(f"adapter '{adapter_name}': unsupported auth_method '{self.auth_method}'")
+            if self.auth_api_key is None:
+                raise Exception(f"adapter '{adapter_name}': missing auth_api_key")
+            
+            adapter = AnthropicAdapter(
+                self.auth_api_key,
+                self.base_url,
+            )
+        else:
+            raise Exception(f"invalid adapter '{adapter_name}'")
         self.adapter = adapter
     
-    def handle_message_synchronous(self, message: Message):
-        print(message)
-    
-    # async def handle_message(self, message: Message):
-    #     # TODO handle errors. This is lazy
-    #     adapter = adapter_from_name(self.adapter)
-    #     adapter.send_message()
+    async def handle_message(self, messages: [Message]):
+        await self.adapter.send_message(messages, self.model)
