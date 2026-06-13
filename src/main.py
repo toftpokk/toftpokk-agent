@@ -5,8 +5,11 @@ import yaml
 from dotenv import load_dotenv, dotenv_values
 import asyncio
 
-from providers import registry
-from core import Message, Provider, Client, AuthMethod
+import providers.registry as providers
+import tools.registry as tools
+from core.core import Message, AuthMethod
+from core.provider import Provider
+from core.client import Client
 
 def _get_valid_model(model_full_name: str) -> (Provider, str):
     try:
@@ -14,7 +17,7 @@ def _get_valid_model(model_full_name: str) -> (Provider, str):
     except ValueError:
         raise ValueError("invalid model format, should be 'provider/model'")
     
-    provider = registry.load_provider(provider_name)
+    provider = providers.load_provider(provider_name)
     if provider is None:
         raise ValueError(f"unsupported provider '{provider_name}'")
     if not provider.model_exists(model_name):
@@ -83,25 +86,40 @@ def main():
         if auth_api_key is None or auth_api_key == "":
             raise Exception(f"provider {provider.display} is authenticating with api key, but required environment {provider.auth_api_key_env} not found")
 
+    # Synchronous, for debugging
+    runner = Runner(Client(
+        provider_name=provider.name,
+        model=model_name,
+        base_url=provider.base_url,
+        auth_method=provider.auth_method,
+        auth_api_key=auth_api_key,
+        adapter_name=provider.adapter,
+    ))
+    while True:
+        try:
+            user_message = input()
+            output_message = asyncio.run(runner.handle_message(user_message))
+        except KeyboardInterrupt:
+            break
+        print(output_message.display())
 
-    async def loop():
-        runner = Runner(Client(
-            provider_name=provider.name,
-            model=model_name,
-            base_url=provider.base_url,
-            auth_method=provider.auth_method,
-            auth_api_key=auth_api_key,
-            adapter_name=provider.adapter,
-        ))
-        while True:
-            try:
-                user_message = input()
-                output_message = await runner.handle_message(user_message)
-            except KeyboardInterrupt:
-                break
-            print(output_message.display())
-    
-    asyncio.run(loop())
+    # async def loop():
+    #     runner = Runner(Client(
+    #         provider_name=provider.name,
+    #         model=model_name,
+    #         base_url=provider.base_url,
+    #         auth_method=provider.auth_method,
+    #         auth_api_key=auth_api_key,
+    #         adapter_name=provider.adapter,
+    #     ))
+    #     while True:
+    #         try:
+    #             user_message = input()
+    #             output_message = await runner.handle_message(user_message)
+    #         except KeyboardInterrupt:
+    #             break
+    #         print(output_message.display())
+    # asyncio.run(loop())
 
 if __name__ == "__main__":
     main()
