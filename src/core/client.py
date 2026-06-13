@@ -46,5 +46,5 @@ class Client():
             raise Exception(f"invalid adapter '{adapter_name}'")
         self.adapter = adapter
     
-    async def handle_message(self, messages: [Message]):
-        await self.adapter.send_message(messages, self.model)
+    async def handle_message(self, messages: [Message]) -> Message:
+        return self.adapter.send_message(messages, self.model)

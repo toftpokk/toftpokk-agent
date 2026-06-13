@@ -46,14 +46,22 @@ class Runner:
     """
     client: Client
     history: [Message]
+    running_id: int
 
     def __init__(self, client: Client) -> None:
         self.client = client
+        self.running_id = 0
+        self.history = []
 
-    async def handle_message(self, message: Message) -> None:
-        # TODO check return value
-        messages = [message]
-        await self.client.handle_message(messages)
+    async def handle_message(self, message: str) -> Message:
+        self.running_id += 1
+
+        user_message = Message.from_user(str(self.running_id), message)
+        self.history.append(user_message)
+
+        output_message = await self.client.handle_message(self.history)
+        self.history.append(output_message)
+        return output_message
 
 def main():
     load_dotenv()
@@ -76,28 +84,24 @@ def main():
             raise Exception(f"provider {provider.display} is authenticating with api key, but required environment {provider.auth_api_key_env} not found")
 
 
-    client = Client(
-        provider_name=provider.name,
-        model=model_name,
-        base_url=provider.base_url,
-        auth_method=provider.auth_method,
-        auth_api_key=auth_api_key,
-        adapter_name=provider.adapter,
-    )
+    async def loop():
+        runner = Runner(Client(
+            provider_name=provider.name,
+            model=model_name,
+            base_url=provider.base_url,
+            auth_method=provider.auth_method,
+            auth_api_key=auth_api_key,
+            adapter_name=provider.adapter,
+        ))
+        while True:
+            try:
+                user_message = input()
+                output_message = await runner.handle_message(user_message)
+            except KeyboardInterrupt:
+                break
+            print(output_message.display())
     
-    runner = Runner(client)
-    running_id = 1
-    while True:
-        try:
-            msg = input()
-            user_message = Message.from_user(str(running_id), msg)
-            asyncio.run(runner.handle_message(user_message))
-            break
-        except KeyboardInterrupt:
-            break
-
-    # provider.deepseek
-    # registry.load(con)
+    asyncio.run(loop())
 
 if __name__ == "__main__":
     main()

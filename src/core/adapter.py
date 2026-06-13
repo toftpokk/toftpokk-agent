@@ -2,7 +2,7 @@ from anthropic import Anthropic
 import anthropic.types as ant_types
 from enum import Enum
 
-from .core import Message, Role, TextBlock
+from .core import Message, Role, TextBlock, ThinkingBlock
 
 class Adapter(Enum):
     ANTHROPIC = "anthropic"
@@ -37,6 +37,12 @@ class AnthropicAdapter(AdapterBase):
                         "type": "text",
                         "text": block.text,
                     })
+                case "thinking":
+                    content.append({
+                        "type": "thinking",
+                        "signature": block.signature,
+                        "thinking": block.thinking,
+                    })
                 case t:
                     raise ValueError(f"unknown content type '{t}'")
         return {
@@ -59,6 +65,11 @@ class AnthropicAdapter(AdapterBase):
                     content.append(TextBlock(
                         text=block.text,
                     ))
+                case "thinking":
+                    content.append(ThinkingBlock(
+                        signature=block.signature,
+                        thinking=block.thinking,
+                    ))
                 case t:
                     raise ValueError(f"unknown content type '{t}'")
 
@@ -70,7 +81,7 @@ class AnthropicAdapter(AdapterBase):
 
     
     
-    async def send_message(self, messages: [Message], model: str) -> None:
+    def send_message(self, messages: [Message], model: str) -> Message:
         ant_msgs: [ant_types.MessageParam] = []
         for msg in messages:
             ant_msg = AnthropicAdapter._convert_message_to_ant_param(msg)
@@ -80,4 +91,4 @@ class AnthropicAdapter(AdapterBase):
             messages=ant_msgs,
             model=model,
         )
-        print(message)
+        return AnthropicAdapter._convert_message_from_ant(message)
