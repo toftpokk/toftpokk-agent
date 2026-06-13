@@ -4,6 +4,7 @@ from enum import Enum
 from typing import Optional
 
 from .core import AuthMethod
+from .adapter import Adapter
 
 @dataclass
 class Provider:
@@ -17,6 +18,7 @@ class Provider:
     display: str
 
     auth_api_key_env: Optional[str] = None
+    adapter: Optional[Adapter] = None
 
     # TODO: checking is useless, make a method that matters
     def model_exists(self, model_name: str) -> bool:
