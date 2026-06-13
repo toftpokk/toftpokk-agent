@@ -8,10 +8,11 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 def tool(
-    func: Callable[P, R],
+    func: Callable[P, R] | None = None,
     *, # disallow positional arguments
     name: str | None = None,
     description: str | None = None,
+    dependencies: [str] = [],
 ) -> Callable[P, R]:
     def decorator(fn: Callable[P, R]) -> Callable[P, R]:
         tool_name = name or fn.__name__
@@ -41,7 +42,8 @@ def tool(
         tool_definition = {
             "name": tool_name,
             "description": tool_desc,
-            "input_schema": input_schema
+            "input_schema": input_schema,
+            "dependencies": dependencies
         }
 
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -88,6 +90,15 @@ class ThinkingBlock(Block):
 
     def display(self) -> str:
         return  f"> {self.thinking}"
+
+@dataclass
+class ToolUseBlock(Block):
+    type_ = "tool_use"
+    name: str
+    input: str
+
+    def display(self) -> str:
+        return  f">TOOL {self.name} {self.input}"
 
 
 
