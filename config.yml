@@ -1,1 +1,1 @@
-model_default: "deepseek/deepseek-v4-flash"
+model_default: "minimax/MiniMax-M2.7"
