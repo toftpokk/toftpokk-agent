@@ -63,7 +63,11 @@ class Role(Enum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
-    # TOOL = "tool"
+    TOOL = "tool"
+
+class StopReason(Enum):
+    END_TURN = "end_turn"
+    TOOL_USE = "tool_use"
 
 class Block:
     type_: str
@@ -89,7 +93,8 @@ class ThinkingBlock(Block):
     thinking: str
 
     def display(self) -> str:
-        return  f"> {self.thinking}"
+        output = self.thinking.replace("\n", "\n> ")
+        return f"> {output}"
 
 @dataclass
 class ToolUseBlock(Block):
@@ -98,16 +103,39 @@ class ToolUseBlock(Block):
     input: str
 
     def display(self) -> str:
+        # TODO clean this up
         return  f">TOOL {self.name} {self.input}"
 
+@dataclass
+class ToolResultBlock(Block):
+    type_ = "tool_result"
+    tool_use_id: str
+    content: [Union[
+        TextBlock,
+    ]]
+    # name: str
+    # input: str
 
+    def display(self) -> str:
+        # TODO clean this up
+        content_outputs = []
+        for content in self.content:
+            content_outputs.append(content.display())
+        
+        return f">TOOL RESULT {self.tool_use_id}"
+
+@dataclass
+class MessageMeta():
+    stop_reason: StopReason | None = None
 
 @dataclass
 class Message():
     message_id: str
     role: Role
     content: [Union[
-        TextBlock
+        TextBlock,
+        ThinkingBlock,
+        ToolUseBlock,
     ]]
     def __repr__(self):
         return f'<Message({self.role}, {self.content})>'
@@ -115,6 +143,10 @@ class Message():
     @classmethod
     def from_user(cls, id: str, msg: str) -> Self:
         return cls(id, Role.USER, [TextBlock(text=msg)])
+    
+    @classmethod
+    def from_tool_result(cls, id: str, content: str) -> Self:
+        return cls(id, Role.TOOL, [ToolResultBlock(tool_use_id=id, content=[TextBlock(text=content)])])
 
     def display(self) -> str:
         output = []

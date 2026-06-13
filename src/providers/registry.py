@@ -1,15 +1,15 @@
 from core.provider import Provider, AuthMethod
 from core.adapter import Adapter
 
-REGISTRY = {}
+REGISTRY: dict[str, Provider] = {}
 
-def register_provider(provider: Provider) -> None:
+def register(provider: Provider) -> None:
     REGISTRY[provider.name] = provider
 
-def load_provider(name: str) -> Provider:
+def load(name: str) -> Provider:
     return REGISTRY.get(name)
 
-register_provider(Provider(
+register(Provider(
     name = "deepseek",
     display = "DeepSeek",
     base_url="https://api.deepseek.com/v1",
@@ -18,7 +18,7 @@ register_provider(Provider(
     auth_api_key_env="DEEPSEEK_API_KEY",
 ))
 
-register_provider(Provider(
+register(Provider(
     name = "minimax",
     display = "MiniMax",
     base_url="https://api.minimax.io/anthropic/",

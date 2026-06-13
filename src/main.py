@@ -7,7 +7,7 @@ import asyncio
 
 import providers.registry as providers
 import tools.registry as tools
-from core.core import Message, AuthMethod
+from core.core import Message, MessageMeta, StopReason, AuthMethod
 from core.provider import Provider
 from core.client import Client
 
@@ -17,7 +17,7 @@ def _get_valid_model(model_full_name: str) -> (Provider, str):
     except ValueError:
         raise ValueError("invalid model format, should be 'provider/model'")
     
-    provider = providers.load_provider(provider_name)
+    provider = providers.load(provider_name)
     if provider is None:
         raise ValueError(f"unsupported provider '{provider_name}'")
     if not provider.model_exists(model_name):
@@ -49,22 +49,49 @@ class Runner:
     """
     client: Client
     history: [Message]
+    tools: [str]
     running_id: int
+    tool_use_id: int
 
     def __init__(self, client: Client) -> None:
         self.client = client
         self.running_id = 0
+        self.tool_use_id = 0
         self.history = []
+        self.tools = tools.list_all()
 
-    async def handle_message(self, message: str) -> Message:
+    async def handle_message(self, message: str) -> [Message]:
         self.running_id += 1
 
         user_message = Message.from_user(str(self.running_id), message)
         self.history.append(user_message)
 
-        output_message = await self.client.handle_message(self.history)
-        self.history.append(output_message)
-        return output_message
+
+        turn_outputs = []
+        while True:
+            (agent_message, agent_meta) = await self.client.handle_message(self.history)
+            self.history.append(agent_message)
+            turn_outputs.append(agent_message)
+
+            if not agent_meta.stop_reason is None:
+                match agent_meta.stop_reason:
+                    case StopReason.END_TURN.value:
+                        break
+                    case StopReason.TOOL_USE.value:
+                        pass
+                    case r:
+                        raise Exception(f"unknown stop reason {r}")
+
+                for block in agent_message.content:
+                    if block.type_ == "tool_use":
+                        self.tool_use_id += 1
+                        if block.name in self.tools:
+                            tool = tools.load(block.name)
+                            tool_result = Message.from_tool_result(str(self.tool_use_id), tool(**block.input))
+                            self.history.append(tool_result)
+                            turn_outputs.append(tool_result)
+
+        return turn_outputs
 
 def main():
     load_dotenv()
@@ -98,10 +125,11 @@ def main():
     while True:
         try:
             user_message = input()
-            output_message = asyncio.run(runner.handle_message(user_message))
+            output_messages = asyncio.run(runner.handle_message(user_message))
         except KeyboardInterrupt:
             break
-        print(output_message.display())
+        for output in output_messages:
+            print(output.display())
 
     # async def loop():
     #     runner = Runner(Client(

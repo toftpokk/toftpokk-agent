@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Callable, ParamSpec, TypeVar
 import os
 import json
 
@@ -7,26 +7,51 @@ from pydantic import Field
 
 from core.core import tool
 
+P = ParamSpec("P")
+R = TypeVar("R")
+
 FOREGROUND_MAX_TIMEOUT=600
 # From hermes file_tools.py, vision_tools.py, terminal_tool.py,
+
+REGISTRY: dict[str, Callable[P,R]] = {}
+
+def register(func: Callable[P,R]) -> None:
+    REGISTRY[func.tool_definition["name"]] = func
+
+def load(name: str) -> Callable[P,R]:
+    return REGISTRY.get(name)
+
+def list_all() -> [str]:
+    return REGISTRY
+
+def _registered(func: Callable[P,R]):
+    register(func)
+    return func
+    
 
 @dataclass
 class ToolError:
     error: str
-    path: str
-    total_lines: str
-    file_size: str
 
+    def to_dict(self):
+        return {
+            "error": self.error
+        }
+    # path: str
+    # total_lines: str
+    # file_size: str
+
+@_registered
 @tool
 def read_file(
     path: Annotated[str, Field(
         description="Path to the file to read (absolute, relative, or ~/path)",
     )],
-    offset: Annotated[str, Field(
+    offset: Annotated[int, Field(
         description="Line number to start reading from (1-indexed, default: 1)",
         ge=1,
     )] = 1,
-    limit: Annotated[str, Field(
+    limit: Annotated[int, Field(
         description="Maximum number of lines to read (default: 500, max: 2000)",
         le=2000,
     )] = 500,
@@ -39,6 +64,8 @@ def read_file(
     """
     # — use vision_analyze for images.
     # TODO
+    offset = int(offset)
+    limit = int(limit)
 
     # normalize
     if offset < 0:
@@ -48,13 +75,27 @@ def read_file(
     elif limit > 2000:
         limit = 2000
     
+    # TODO permissions layer
 
     MAX_READ_CHARS = 100_000
         
     lines = ""
-    with open(path, 'r') as f:
-        line_list = f.readlines()
-        lines = "\n".join(line_list)
+
+    try:
+        # TODO: canonicalize path
+        f = open(path, 'r')
+    except FileNotFoundError:
+        return json.dumps(ToolError(
+            error=(
+                f"File not found: {path}"
+                # TODO suggest similar files
+            )
+        ).to_dict())
+    else:
+        with f:
+            line_list = f.readlines()
+            lines = "\n".join(line_list)
+
 
     total_lines = 0
     # ref: https://stackoverflow.com/questions/845058/how-to-get-the-line-count-of-a-large-file-cheaply-in-python
@@ -75,10 +116,11 @@ def read_file(
         ))
     
     return json.dumps({
-        content: lines,
-        total_lines: total_lines,
-        file_size: file_size,
+        "content": lines,
+        "total_lines": total_lines,
+        "file_size": file_size,
     })
+
 
 # @tool
 # def write_file(
