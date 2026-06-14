@@ -1,5 +1,18 @@
 # README
 
+## Prerequisites
+
+- uv
+- python 3.13
+
+## Run Project
+
+  make run
+
+## Remove Virtual Env
+
+  make clean
+
 ## My Agent
 - just spin up more docker containers if you want more agents
 - dedicated "gateway" container and "runner" container
