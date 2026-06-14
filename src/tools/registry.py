@@ -84,22 +84,27 @@ def read_file(
     return json.dumps(read_result.to_dict())
 
 
-# @tool
-# def write_file(
-#     path: Annotated[str, Field(
-#         description="Path to the file to write (will be created if it doesn't exist, overwritten if it does)",
-#     )],
-#     content: Annotated[str, Field(
-#         description="Complete content to write to the file",
-#     )],
-# ):
-#     """
-#     Write content to a file, completely replacing existing content. Use this instead of echo/cat heredoc in terminal. 
-#     Creates parent directories automatically. OVERWRITES the entire file — use 'patch' for targeted edits. 
-#     Auto-runs syntax checks on .py/.json/.yaml/.toml and other linted languages; only NEW errors introduced by this write are surfaced (pre-existing errors are filtered out).
-#     """
-#     # TODO
-#     pass
+@tool
+def write_file(
+    path: Annotated[str, Field(
+        description="Path to the file to write (will be created if it doesn't exist, overwritten if it does)",
+    )],
+    content: Annotated[str, Field(
+        description="Complete content to write to the file",
+    )],
+):
+    """
+    Write content to a file, completely replacing existing content. Use this instead of echo/cat heredoc in terminal. 
+    Creates parent directories automatically. OVERWRITES the entire file — use 'patch' for targeted edits. 
+    Auto-runs syntax checks on .py/.json/.yaml/.toml and other linted languages; only NEW errors introduced by this write are surfaced (pre-existing errors are filtered out).
+    """
+    
+    fa = file_op.FileAccessor(
+        blacklist=[],
+        whitelist=[]
+    )
+    read_result = fa.write_file(path, content)
+    return json.dumps(read_result.to_dict())
 
 # @tool
 # def search_files(

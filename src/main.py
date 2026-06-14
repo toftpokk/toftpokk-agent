@@ -114,25 +114,23 @@ def main():
         if auth_api_key is None or auth_api_key == "":
             raise Exception(f"provider {provider.display} is authenticating with api key, but required environment {provider.auth_api_key_env} not found")
 
-    print(tools.read_file("/etc/passwd", -1, 10))
-
     # Synchronous, for debugging
-    # runner = Runner(Client(
-    #     provider_name=provider.name,
-    #     model=model_name,
-    #     base_url=provider.base_url,
-    #     auth_method=provider.auth_method,
-    #     auth_api_key=auth_api_key,
-    #     adapter_name=provider.adapter,
-    # ))
-    # while True:
-    #     try:
-    #         user_message = input()
-    #         output_messages = asyncio.run(runner.handle_message(user_message))
-    #     except KeyboardInterrupt:
-    #         break
-    #     for output in output_messages:
-    #         print(output.display())
+    runner = Runner(Client(
+        provider_name=provider.name,
+        model=model_name,
+        base_url=provider.base_url,
+        auth_method=provider.auth_method,
+        auth_api_key=auth_api_key,
+        adapter_name=provider.adapter,
+    ))
+    while True:
+        try:
+            user_message = input()
+            output_messages = asyncio.run(runner.handle_message(user_message))
+        except KeyboardInterrupt:
+            break
+        for output in output_messages:
+            print(output.display())
 
     # async def loop():
     #     runner = Runner(Client(
