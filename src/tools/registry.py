@@ -22,7 +22,7 @@ def register(func: Callable[P,R]) -> None:
 def load(name: str) -> Callable[P,R]:
     return REGISTRY.get(name)
 
-def list_all() -> [str]:
+def list_all() -> dict[str, Callable[P,R]]:
     return REGISTRY
 
 def _registered(func: Callable[P,R]):
@@ -83,7 +83,7 @@ def read_file(
     read_result = fa.read_file(path, offset, limit)
     return json.dumps(read_result.to_dict())
 
-
+@_registered
 @tool
 def write_file(
     path: Annotated[str, Field(

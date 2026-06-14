@@ -1,5 +1,6 @@
 import os
 import logging
+from typing import Callable, ParamSpec, TypeVar
 
 import yaml
 from dotenv import load_dotenv, dotenv_values
@@ -11,6 +12,10 @@ from core.core import Message, MessageMeta, StopReason, AuthMethod
 from core.provider import Provider
 from core.client import Client
 from core.file_op import FileAccessor
+from core import adapter
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 def _get_valid_model(model_full_name: str) -> (Provider, str):
     try:
@@ -50,7 +55,7 @@ class Runner:
     """
     client: Client
     history: [Message]
-    tools: [str]
+    tools: dict[str, Callable[P,R]]
     running_id: int
     tool_use_id: int
 
@@ -67,10 +72,13 @@ class Runner:
         user_message = Message.from_user(str(self.running_id), message)
         self.history.append(user_message)
 
+        all_tools = []
+        for tool in self.tools:
+            all_tools.append(self.tools[tool].tool_definition)
 
         turn_outputs = []
         while True:
-            (agent_message, agent_meta) = await self.client.handle_message(self.history)
+            (agent_message, agent_meta) = await self.client.handle_message(self.history, all_tools)
             self.history.append(agent_message)
             turn_outputs.append(agent_message)
 
@@ -112,16 +120,24 @@ def main():
     if provider.auth_method == AuthMethod.API_KEY:
         auth_api_key = os.getenv(provider.auth_api_key_env)
         if auth_api_key is None or auth_api_key == "":
-            raise Exception(f"provider {provider.display} is authenticating with api key, but required environment {provider.auth_api_key_env} not found")
+            raise Exception(f"provider {provider.display} is authenticating with {provider.auth_method}, but required environment {provider.auth_api_key_env} is not set")
 
-    # Synchronous, for debugging
+    model_adapter : adapter.Adapter = None
+    match provider.adapter:
+        case "anthropic":
+            if provider.auth_method != AuthMethod.API_KEY:
+                raise Exception(f"provider '{provider.display}' is authenticating with '{provider.auth_method}', but adapter '{provider.adapter}' does not support this method")
+            model_adapter = adapter.AnthropicAdapter(
+                api_key=auth_api_key,
+                base_url=provider.base_url,
+            )
+        case _:
+            raise Exception(f"provider '{provider.name}' uses unknown adapter '{provider.adapter}'")
+
     runner = Runner(Client(
         provider_name=provider.name,
         model=model_name,
-        base_url=provider.base_url,
-        auth_method=provider.auth_method,
-        auth_api_key=auth_api_key,
-        adapter_name=provider.adapter,
+        adapter=model_adapter
     ))
     while True:
         try:

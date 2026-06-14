@@ -1,5 +1,4 @@
 from core.provider import Provider, AuthMethod
-from core.adapter import Adapter
 
 REGISTRY: dict[str, Provider] = {}
 
@@ -16,6 +15,7 @@ register(Provider(
     models=["deepseek-v4-flash", "deepseek-v4-pro"],
     auth_method=AuthMethod.API_KEY,
     auth_api_key_env="DEEPSEEK_API_KEY",
+    adapter="anthropic",
 ))
 
 register(Provider(
@@ -25,5 +25,5 @@ register(Provider(
     models=["MiniMax-M2.7"],
     auth_method=AuthMethod.API_KEY,
     auth_api_key_env="MINIMAX_API_KEY",
-    adapter=Adapter.ANTHROPIC,
+    adapter="anthropic",
 ))
