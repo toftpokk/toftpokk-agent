@@ -62,12 +62,16 @@ class FileAccessor:
 
     Whitelist overrides blacklist and blocklist if set.
     """
+    # deny reading & writing files
     blacklist_glob: list[Path]
     whitelist_glob: list[Path]
-    blocklist_prefix: list[Path]
-    sensitive_suffix: list[Path]
+    sensitive_suffixes: list[Path]
 
-    def __init__(self, blacklist: [str] = [], whitelist: [str] = []):
+    # deny reading, writing & listing files
+    blocklist_prefix: list[Path]
+    # _is_blocked_device_path is hardcoded
+
+    def __init__(self, blacklist: [str] = [], whitelist: [str] = [], sensitive_suffixes: [str] = []):
         self.blacklist_glob = []
         self.whitelist_glob = []
         for p in blacklist:
@@ -102,22 +106,13 @@ class FileAccessor:
             self.blocklist_prefix.append(path)
 
         # originally used for files under hermes config. Now it's for all files
-        self.sensitive_suffix = []
-        sensitive_suffix = [
-            "auth.json",
-            "auth.lock",
-            ".anthropic_oauth.json",
-            ".env",
-            "webhook_subscriptions.json",
-            "auth/google_oauth.json",
-            "cache/bws_cache.json"
-        ]
-        for p in sensitive_suffix:
+        self.sensitive_suffixes = []
+        for p in sensitive_suffixes:
             try:
                 path = Path(p)
             except RuntimeError:
                 raise InvalidUserPathError(f"failed to expand '{p}'")
-            self.sensitive_suffix.append(path)
+            self.sensitive_suffixes.append(path)
 
     def read_file(self, path_input: str, offset: int, limit: int) -> ReadOutput | ReadError:
         if offset < 0:
@@ -128,7 +123,7 @@ class FileAccessor:
         canonical_path = FileAccessor._canonicalize_path(path_input)
 
         try:
-            self._permission_check(canonical_path)
+            self._permission_can_read_write(canonical_path)
         except PermissionError as error:
             return ReadError(
                 error=f"permission error: {error}"
@@ -190,7 +185,7 @@ class FileAccessor:
         parent = os.path.dirname(canonical_path)
 
         try:
-            self._permission_check(canonical_path)
+            self._permission_can_read_write(canonical_path)
         except PermissionError as error:
             return ReadError(
                 error=f"permission error: {error}"
@@ -306,7 +301,7 @@ class FileAccessor:
             # Flat mode (only children of the root)
             files_iterator = root.glob(stripped)
 
-        files = [str(Path(f).resolve()) for f in files_iterator if f.is_file()]
+        files = [str(Path(f).resolve()) for f in files_iterator]
         listed_files = files[offset : offset + limit]
 
         return SearchFilesOutput(
@@ -322,22 +317,25 @@ class FileAccessor:
             raise ValueError(f"failed to expand '{path}'")
         return canonical_path
     
-    def _permission_check(self, canonical_path: Path):
+    def _permission_can_search(self, canonical_path: Path):
+        pass
+    
+    def _permission_can_read_write(self, canonical_path: Path):
         if len(self.whitelist_glob) > 0:
             for pattern in self.whitelist_glob:
                 if canonical_path.match(pattern):
                     return
-            raise PermissionError(f"'{canonical_path}' is not in the whitelist")
+            raise PermissionError(f"'{canonical_path}' is not in the user's whitelist")
         
         for pattern in self.blacklist_glob:
             if canonical_path.match(pattern):
-                raise PermissionError(f"'{canonical_path}' is blacklisted")
+                raise PermissionError(f"'{canonical_path}' is in the user's blacklist")
         
         for blocked_zone in self.blocklist_prefix:
             if canonical_path.is_relative_to(blocked_zone):
                 raise PermissionError(f"'{canonical_path}' is a device path that would block or produce infinite output")
-        
-        for blocked_suffix in self.sensitive_suffix:
+
+        for blocked_suffix in self.sensitive_suffixes:
             suffix_len = len(blocked_suffix.parts)
             path_tail = canonical_path.parts[-suffix_len:]
             if path_tail == blocked_suffix.parts:

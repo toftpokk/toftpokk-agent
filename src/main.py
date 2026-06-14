@@ -35,6 +35,7 @@ def _get_valid_model(model_full_name: str) -> (Provider, str):
 class ConfigFileOp:
     blacklist: list = None
     whitelist: list = None
+    sensitive_suffixes: list = None
 
 @dataclass  
 class Config:
@@ -173,6 +174,7 @@ def main():
 
     blacklist = (config.file_op and config.file_op.blacklist) or []
     whitelist = (config.file_op and config.file_op.whitelist) or []
+    sensitive_suffixes = (config.file_op and config.file_op.sensitive_suffixes) or []
     runner = Runner(
         Client(
             provider_name=provider.name,
@@ -181,7 +183,8 @@ def main():
         ),
         FileAccessor(
             blacklist=blacklist, 
-            whitelist=whitelist
+            whitelist=whitelist,
+            sensitive_suffixes=sensitive_suffixes,
         )
     )
     while True:
