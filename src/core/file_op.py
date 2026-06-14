@@ -61,6 +61,7 @@ class SearchContentMatch:
     path: str
     line: int
     content: str
+    context: str
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None and v != []}
@@ -343,15 +344,23 @@ class FileAccessor:
                 continue
             try:
                 with open(file, "r", errors="replace") as f:
-                    for line_num, line in enumerate(f, start=1):
-                        if regex.search(line):
-                            matches.append(SearchContentMatch(
-                                path=str(file.resolve()),
-                                line=line_num,
-                                content=line.rstrip("\n"),
-                            ))
+                    lines = f.readlines()
             except OSError:
                 continue
+
+            for line_num, line in enumerate(lines, start=1):
+                if regex.search(line):
+                    start = max(0, line_num - 1 - context)
+                    end = min(len(lines), line_num + context)
+                    context_lines = [
+                        l.rstrip("\n") for l in lines[start:end]
+                    ]
+                    matches.append(SearchContentMatch(
+                        path=str(file.resolve()),
+                        line=line_num,
+                        content=line.rstrip("\n"),
+                        context=context_lines if context > 0 else None,
+                    ))
 
         listed = matches[offset : offset + limit]
         return SearchContentOutput(

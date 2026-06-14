@@ -144,6 +144,10 @@ def make_tools(file_accessor: file_op.FileAccessor) -> dict[str,Callable[P,R]]:
             int, 
             Field(default=0, description="Skip first N results for pagination (default: 0)")
         ] = 0,
+        context: Annotated[
+            int, 
+            Field(default=0, description="Number of context lines before and after each match (default: 0)")
+        ] = 0,
     ):
         offset = int(offset)
         limit = int(limit)
@@ -157,7 +161,7 @@ def make_tools(file_accessor: file_op.FileAccessor) -> dict[str,Callable[P,R]]:
         if file_glob is None:
             file_glob = '*'
 
-        read_result = file_accessor.search_content(pattern, path, file_glob, limit, offset)
+        read_result = file_accessor.search_content(pattern, path, file_glob, limit, offset, context)
         return json.dumps(read_result.to_dict())
 
     return {
