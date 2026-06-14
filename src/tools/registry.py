@@ -6,6 +6,7 @@ import json
 from pydantic import Field
 
 from core.core import tool
+from core import file_op
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -75,51 +76,12 @@ def read_file(
     elif limit > 2000:
         limit = 2000
     
-    # TODO permissions layer
-
-    MAX_READ_CHARS = 100_000
-        
-    lines = ""
-
-    try:
-        # TODO: canonicalize path
-        f = open(path, 'r')
-    except FileNotFoundError:
-        return json.dumps(ToolError(
-            error=(
-                f"File not found: {path}"
-                # TODO suggest similar files
-            )
-        ).to_dict())
-    else:
-        with f:
-            line_list = f.readlines()
-            lines = "\n".join(line_list)
-
-
-    total_lines = 0
-    # ref: https://stackoverflow.com/questions/845058/how-to-get-the-line-count-of-a-large-file-cheaply-in-python
-    with open(path, "rb") as f:
-        total_lines = sum(1 for _ in f)
-
-    file_size = os.path.getsize(path)
-
-    content_len = len(lines)
-    if len(lines) > MAX_READ_CHARS:
-        return json.dumps(ToolError(
-            error=(
-                f"Read produced {content_len:,} characters which exceeds "
-                f"the safety limits ({MAX_READ_CHARS:,}). "
-                "Use offset and limit to read a smaller range. "
-                f"The file has {total_lines} lines total."
-            )
-        ))
-    
-    return json.dumps({
-        "content": lines,
-        "total_lines": total_lines,
-        "file_size": file_size,
-    })
+    fa = file_op.FileAccessor(
+        blacklist=[],
+        whitelist=[]
+    )
+    read_result = fa.read_file(path, offset, limit)
+    return json.dumps(read_result.to_dict())
 
 
 # @tool
