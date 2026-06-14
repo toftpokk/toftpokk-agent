@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Annotated, Callable, ParamSpec, TypeVar
+from typing import Annotated, Callable, ParamSpec, TypeVar, Optional
 import os
 import json
 
@@ -95,7 +95,7 @@ def make_tools(file_accessor: file_op.FileAccessor) -> dict[str,Callable[P,R]]:
     def search_files(
         pattern: Annotated[
             str, 
-            Field(description="Glob pattern (e.g., '*.py') for file search")
+            Field(description="Glob pattern (e.g., '*.py')")
         ],
         path: Annotated[
             str, 
@@ -121,11 +121,50 @@ def make_tools(file_accessor: file_op.FileAccessor) -> dict[str,Callable[P,R]]:
 
         read_result = file_accessor.search_files(pattern, path, limit, offset)
         return json.dumps(read_result.to_dict())
+    
+    @tool
+    def search_content(
+        pattern: Annotated[
+            str, 
+            Field(description="Regex pattern (e.g., 'file.*')")
+        ],
+        path: Annotated[
+            str, 
+            Field(default=".", description="Directory or file to search in (default: current working directory)")
+        ] = ".",
+        file_glob: Annotated[
+            Optional[str], 
+            Field(default=None, description="Filter files by pattern in grep mode (e.g., '*.py' to only search Python files)")
+        ] = None,
+        limit: Annotated[
+            int, 
+            Field(default=50, description="Maximum number of results to return (default: 50)")
+        ] = 50,
+        offset: Annotated[
+            int, 
+            Field(default=0, description="Skip first N results for pagination (default: 0)")
+        ] = 0,
+    ):
+        offset = int(offset)
+        limit = int(limit)
+
+        # normalize
+        if offset < 0:
+            offset = 0
+        if limit < 0:
+            limit = 0
+        
+        if file_glob is None:
+            file_glob = '*'
+
+        read_result = file_accessor.search_content(pattern, path, file_glob, limit, offset)
+        return json.dumps(read_result.to_dict())
 
     return {
         "read_file": read_file,
         "write_file": write_file,
-        "search_files": search_files
+        "search_files": search_files,
+        "search_content": search_content,
     }
 
 # @tool

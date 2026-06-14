@@ -166,11 +166,13 @@ def main():
         case _:
             raise Exception(f"provider '{provider.name}' uses unknown adapter '{provider.adapter}'")
     
+    # blacklist = (config.file_op and config.file_op.blacklist) or []
+    # whitelist = (config.file_op and config.file_op.whitelist) or []
     # fa = FileAccessor(
     #         blacklist=blacklist, 
     #         whitelist=whitelist
     #     )
-    # print(fa.search_files("**", ".", limit=10, offset=0))
+    # print(fa.search_content("*", ".", "*", limit=10, offset=0))
 
     blacklist = (config.file_op and config.file_op.blacklist) or []
     whitelist = (config.file_op and config.file_op.whitelist) or []

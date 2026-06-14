@@ -3,6 +3,7 @@ import os
 import json
 from dataclasses import dataclass
 import errno
+import re
 
 MAX_READ_CHARS = 100_000
 
@@ -54,6 +55,35 @@ class SearchFilesOutput:
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None and v != []}
+
+@dataclass
+class SearchContentMatch:
+    path: str
+    line: int
+    content: str
+
+    def to_dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if v is not None and v != []}
+    
+@dataclass
+class SearchContentError:
+    error: str
+
+    def to_dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if v is not None and v != []}
+
+@dataclass
+class SearchContentOutput:
+    matches: list[SearchContentMatch]
+    matches_count: int
+    total_matches: int
+
+    def to_dict(self) -> dict:
+        return {
+            "matches": [m.to_dict() for m in self.matches],
+            "matches_count": self.matches_count,
+            "total_matches": self.total_matches,
+        }
 
 
 class FileAccessor:
@@ -267,6 +297,68 @@ class FileAccessor:
     #             continue
                 
     #     return matches[offset : offset + limit]
+
+    def search_content(self, pattern: str, path: str, file_glob: str, limit: int, offset: int, context: int):
+        if offset < 0:
+            raise ValueError(f"offset should be non-negative, currently '{offset}'")
+        if limit < 0:
+            raise ValueError(f"limit should be non-negative, currently '{limit}'")
+        if context < 0:
+            raise ValueError(f"context should be non-negative, currently '{context}'")
+        
+        root = FileAccessor._canonicalize_path(path)
+        try:
+            regex = re.compile(pattern)
+        except re.error as e:
+            return SearchContentError(error=f"invalid pattern '{pattern}': {e}")
+        
+        target_destination = (root / file_glob).resolve()
+        if not target_destination.is_relative_to(root):
+            return SearchFilesError(
+                error=f"file_glob '{file_glob}' needs to be relative to the root path"
+            )
+
+        stripped = file_glob.strip()
+        if not stripped or stripped in (".", ".."):
+            return SearchFilesError(
+                error=f"file_glob '{file_glob}' is invalid, try '*' or '**'"
+            )
+        if PurePath(stripped).is_absolute():
+            return SearchFilesError(
+                error=f"file_glob '{file_glob}' must be a relative pattern"
+            )
+        
+        if "**" in stripped:
+            files_iterator = root.rglob(stripped)
+        else:
+            files_iterator = root.glob(stripped)
+
+        matches = []
+        for file in files_iterator:
+            if not file.is_file():
+                continue
+            try:
+                self._permission_can_read_write(file.resolve())
+            except PermissionError:
+                continue
+            try:
+                with open(file, "r", errors="replace") as f:
+                    for line_num, line in enumerate(f, start=1):
+                        if regex.search(line):
+                            matches.append(SearchContentMatch(
+                                path=str(file.resolve()),
+                                line=line_num,
+                                content=line.rstrip("\n"),
+                            ))
+            except OSError:
+                continue
+
+        listed = matches[offset : offset + limit]
+        return SearchContentOutput(
+            matches=listed,
+            matches_count=len(listed),
+            total_matches=len(matches),
+        )
         
     
     def search_files(self, pattern: str, path: str, limit: int, offset: int) -> SearchFilesOutput | SearchFilesError:
@@ -274,7 +366,6 @@ class FileAccessor:
             raise ValueError(f"offset should be non-negative, currently '{offset}'")
         if limit < 0:
             raise ValueError(f"limit should be non-negative, currently '{limit}'")
-        """Equivalent to: find path -name "*pattern*" """
         
         root = FileAccessor._canonicalize_path(path)
 
@@ -316,9 +407,6 @@ class FileAccessor:
         except RuntimeError:
             raise ValueError(f"failed to expand '{path}'")
         return canonical_path
-    
-    def _permission_can_search(self, canonical_path: Path):
-        pass
     
     def _permission_can_read_write(self, canonical_path: Path):
         if len(self.whitelist_glob) > 0:
