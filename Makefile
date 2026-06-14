@@ -1,7 +1,18 @@
+.venv:
+	uv venv
+
+.PHONY: sync
+sync: .venv
+	uv sync
+
 .PHONY: run
-run:
-	python src/main.py
+run: .venv
+	uv run python src/main.py
 
 .PHONY: package
-package:
-	pip install -e .
+package: .venv
+	uv pip install -e .
+
+.PHONY: clean
+clean:
+	rm -rf .venv

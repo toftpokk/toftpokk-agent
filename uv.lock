@@ -354,7 +354,7 @@ wheels = [
 ]
 
 [[package]]
-name = "kong-agent"
+name = "toftpokk-agent"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
