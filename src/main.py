@@ -2,6 +2,7 @@ import os
 import logging
 from typing import Callable, ParamSpec, TypeVar, Self
 from dataclasses import dataclass, fields, is_dataclass
+import json
 
 import yaml
 from dotenv import load_dotenv, dotenv_values
@@ -9,7 +10,7 @@ import asyncio
 
 import providers.registry as providers
 from tools.registry import make_tools
-from core.core import Message, MessageMeta, StopReason, AuthMethod
+from core.core import Message, MessageMeta, TurnMeta, StopReason, AuthMethod
 from core.provider import Provider
 from core.client import Client
 from core.file_op import FileAccessor
@@ -89,16 +90,14 @@ class Runner:
     history: [Message]
     tools: dict[str, Callable[P,R]]
     running_id: int
-    tool_use_id: int
 
     def __init__(self, client: Client, file_accessor: FileAccessor) -> None:
         self.client = client
         self.history = []
         self.running_id = 0
-        self.tool_use_id = 0
         self.tools = make_tools(file_accessor=file_accessor)
 
-    async def handle_message(self, message: str) -> [Message]:
+    async def handle_message(self, message: str) -> ([Message], MessageMeta):
         self.running_id += 1
 
         user_message = Message.from_user(str(self.running_id), message)
@@ -114,25 +113,37 @@ class Runner:
             self.history.append(agent_message)
             turn_outputs.append(agent_message)
 
-            if not agent_meta.stop_reason is None:
-                match agent_meta.stop_reason:
-                    case StopReason.END_TURN.value:
-                        break
-                    case StopReason.TOOL_USE.value:
-                        pass
-                    case r:
-                        raise Exception(f"unknown stop reason {r}")
+            if agent_meta.stop_reason is None:
+                continue
 
-                for block in agent_message.content:
-                    if block.type_ == "tool_use":
-                        self.tool_use_id += 1
-                        if block.name in self.tools:
+            match agent_meta.stop_reason:
+                case StopReason.END_TURN.value:
+                    return (turn_outputs, agent_meta)
+                case StopReason.TOOL_USE.value:
+                    for block in agent_message.content:
+                        if not block.type_ == "tool_use":
+                            continue
+                        if not block.name in self.tools:
+                            tool_result = json.dumps({
+                                "error": f"tool '{block.name}' does not exist"
+                            })
+                            logging.warn(f"agent used unknown tool '{block.name}'")
+                        else:
                             tool = self.tools[block.name]
-                            tool_result = Message.from_tool_result(str(self.tool_use_id), tool(**block.input))
-                            self.history.append(tool_result)
-                            turn_outputs.append(tool_result)
-
-        return turn_outputs
+                            try:
+                                tool_result = tool(**block.input)
+                            except Exception as error:
+                                logging.critical(f"tool '{block.name}' raised an error: {error}")
+                                tool_result = json.dumps({
+                                    "error": f"tool '{block.name}' raised an error"
+                                })
+                        tool_message = Message.from_tool_result(str(block.tool_use_id), tool_result)
+                        self.history.append(tool_message)
+                        turn_outputs.append(tool_message)
+                case StopReason.MAX_TOKENS.value:
+                    return (turn_outputs, agent_meta)
+                case _:
+                    raise Exception(f"unknown stop reason {agent_meta.stop_reason}")
 
 def main():
     load_dotenv()
@@ -192,11 +203,15 @@ def main():
     while True:
         try:
             user_message = input()
-            output_messages = asyncio.run(runner.handle_message(user_message))
+            (output_messages, turn_meta) = asyncio.run(runner.handle_message(user_message))
         except KeyboardInterrupt:
             break
         for output in output_messages:
             print(output.display())
+        if not turn_meta.stop_reason is None:
+            match turn_meta.stop_reason:
+                case StopReason.MAX_TOKENS.value:
+                    print(f"out of tokens with reason: {turn_meta.stop_details}")
 
     # async def loop():
     #     runner = Runner(Client(

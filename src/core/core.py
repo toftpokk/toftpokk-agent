@@ -68,6 +68,12 @@ class Role(Enum):
 class StopReason(Enum):
     END_TURN = "end_turn"
     TOOL_USE = "tool_use"
+    MAX_TOKENS = "max_tokens"
+
+@dataclass
+class StopDetails:
+    category: str
+    explanation: str
 
 class Block:
     type_: str
@@ -101,6 +107,7 @@ class ToolUseBlock(Block):
     type_ = "tool_use"
     name: str
     input: str
+    tool_use_id: str
 
     def display(self) -> str:
         # TODO clean this up
@@ -125,8 +132,14 @@ class ToolResultBlock(Block):
         return f">TOOL RESULT {self.tool_use_id}"
 
 @dataclass
+class TurnMeta():
+    stop_reason: StopReason | None = None
+    stop_details: StopDetails | None = None
+
+@dataclass
 class MessageMeta():
     stop_reason: StopReason | None = None
+    stop_details: StopDetails | None = None
 
 @dataclass
 class Message():

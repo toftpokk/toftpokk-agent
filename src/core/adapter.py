@@ -2,7 +2,7 @@ from anthropic import Anthropic
 import anthropic.types as ant_types
 from enum import Enum
 
-from .core import Message, MessageMeta, Block, Role, TextBlock, ThinkingBlock, ToolUseBlock
+from .core import Message, MessageMeta, Block, Role, TextBlock, ThinkingBlock, ToolUseBlock, StopDetails
     
 class Adapter():
     # TODO return None is lazy
@@ -36,6 +36,7 @@ class AnthropicAdapter(Adapter):
                     "type": "tool_use",
                     "input": block.input,
                     "name": block.name,
+                    "id": block.tool_use_id,
                 }
             case "tool_result":
                 content = []
@@ -43,6 +44,7 @@ class AnthropicAdapter(Adapter):
                     content.append(AnthropicAdapter._block_to_ant_param(b))
                 return{
                     "type": "tool_result",
+                    "tool_use_id": block.tool_use_id,
                     "content": content
                 }
             case t:
@@ -88,9 +90,8 @@ class AnthropicAdapter(Adapter):
                         thinking=block.thinking,
                     ))
                 case "tool_use":
-                    print("caller", block.caller)
                     content.append(ToolUseBlock(
-                        # caller=block.caller,
+                        tool_use_id=block.id,
                         input=block.input,
                         name=block.name,
                     ))
@@ -116,9 +117,16 @@ class AnthropicAdapter(Adapter):
             messages=ant_msgs,
             model=model,
         )
+        stop_details = None
+        if not message.stop_details is None:
+            stop_details = StopDetails(
+                category=message.stop_details.category,
+                explanation=message.stop_details.explanation,
+            )
         return (
             AnthropicAdapter._convert_message_from_ant(message),
             MessageMeta(
                 stop_reason=message.stop_reason,
+                stop_details=stop_details,
             )
         )

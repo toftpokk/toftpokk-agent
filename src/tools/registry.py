@@ -84,9 +84,11 @@ def make_tools(file_accessor: file_op.FileAccessor) -> dict[str,Callable[P,R]]:
     ):
         """
         Write content to a file, completely replacing existing content. Use this instead of echo/cat heredoc in terminal. 
-        Creates parent directories automatically. OVERWRITES the entire file — use 'patch' for targeted edits. 
+        Creates parent directories automatically. OVERWRITES the entire file. 
         Auto-runs syntax checks on .py/.json/.yaml/.toml and other linted languages; only NEW errors introduced by this write are surfaced (pre-existing errors are filtered out).
         """
+
+        "— use 'patch' for targeted edits"
         
         read_result = file_accessor.write_file(path, content)
         return json.dumps(read_result.to_dict())
