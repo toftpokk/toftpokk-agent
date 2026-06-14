@@ -1,1 +1,4 @@
 model_default: "minimax/MiniMax-M2.7"
+file_op:
+  blacklist:
+    - "**/.git/**"

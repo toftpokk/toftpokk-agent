@@ -1,13 +1,14 @@
 import os
 import logging
-from typing import Callable, ParamSpec, TypeVar
+from typing import Callable, ParamSpec, TypeVar, Self
+from dataclasses import dataclass, fields, is_dataclass
 
 import yaml
 from dotenv import load_dotenv, dotenv_values
 import asyncio
 
 import providers.registry as providers
-import tools.registry as tools
+from tools.registry import make_tools
 from core.core import Message, MessageMeta, StopReason, AuthMethod
 from core.provider import Provider
 from core.client import Client
@@ -30,22 +31,52 @@ def _get_valid_model(model_full_name: str) -> (Provider, str):
         raise ValueError(f"unknown model '{model_name}' for provider '{provider_name}', supported models: {provider.models}")
     return (provider, model_name)
 
+@dataclass
+class ConfigFileOp:
+    blacklist: list = None
+    whitelist: list = None
+
+@dataclass  
 class Config:
     model_default: str = None
-        
-    def __init__(self, filename: str) -> None:
-        raw = None
+    file_op: ConfigFileOp = None
+
+    @classmethod
+    def from_file(cls, filename: str) -> "Config":
         with open(filename, "r") as f:
-            raw = yaml.safe_load(f)
-        if raw is None:
-            return
-        if "model_default" in raw:
-            model_default = raw["model_default"]
+            raw = yaml.safe_load(f) or {}
+        return _load(cls, raw, filename)
+    
+    def _validate(self, filename: str, path: str):
+        if self.model_default is not None:
             try:
-                _, _ = _get_valid_model(model_default)
-                self.model_default = model_default
-            except ValueError as error:
-                logging.warning(f"loading from '{filename}': loading model_default: {error}")
+                _, _ = _get_valid_model(self.model_default)
+            except ValueError as e:
+                logging.warning(f"parsing config '{filename}': '{path}.model_default': {e}")
+                self.model_default = None
+
+def _load(cls, raw: dict, filename: str, path: str = ""):
+    if not isinstance(raw, dict):
+        logging.error(f"parsing config'{filename}': '{path}' expected a mapping, got {type(raw).__name__}")
+        return cls()
+
+    known = {f.name: f for f in fields(cls)}
+    kwargs = {}
+    for k, v in raw.items():
+        if k not in known:
+            continue
+        field = known[k]
+        field_path = f"{path}.{k}" if path else k
+        if is_dataclass(field.type):
+            kwargs[k] = _load(field.type, v, filename, field_path)
+        else:
+            kwargs[k] = v
+
+    instance = cls(**kwargs)
+    if hasattr(instance, "_validate"):
+        instance._validate(filename, path or cls.__name__.lower())
+    return instance
+
 
 
 class Runner:
@@ -59,12 +90,12 @@ class Runner:
     running_id: int
     tool_use_id: int
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, client: Client, file_accessor: FileAccessor) -> None:
         self.client = client
+        self.history = []
         self.running_id = 0
         self.tool_use_id = 0
-        self.history = []
-        self.tools = tools.list_all()
+        self.tools = make_tools(file_accessor=file_accessor)
 
     async def handle_message(self, message: str) -> [Message]:
         self.running_id += 1
@@ -95,7 +126,7 @@ class Runner:
                     if block.type_ == "tool_use":
                         self.tool_use_id += 1
                         if block.name in self.tools:
-                            tool = tools.load(block.name)
+                            tool = self.tools[block.name]
                             tool_result = Message.from_tool_result(str(self.tool_use_id), tool(**block.input))
                             self.history.append(tool_result)
                             turn_outputs.append(tool_result)
@@ -107,7 +138,7 @@ def main():
 
     # TODO create temp config file
     # temporary file
-    config = Config("config.yml")
+    config = Config.from_file("config.yml")
 
     model_full_name = config.model_default
     if model_full_name is None:
@@ -133,12 +164,26 @@ def main():
             )
         case _:
             raise Exception(f"provider '{provider.name}' uses unknown adapter '{provider.adapter}'")
+    
+    # fa = FileAccessor(
+    #         blacklist=blacklist, 
+    #         whitelist=whitelist
+    #     )
+    # print(fa.search_files("**", ".", limit=10, offset=0))
 
-    runner = Runner(Client(
-        provider_name=provider.name,
-        model=model_name,
-        adapter=model_adapter
-    ))
+    blacklist = (config.file_op and config.file_op.blacklist) or []
+    whitelist = (config.file_op and config.file_op.whitelist) or []
+    runner = Runner(
+        Client(
+            provider_name=provider.name,
+            model=model_name,
+            adapter=model_adapter
+        ),
+        FileAccessor(
+            blacklist=blacklist, 
+            whitelist=whitelist
+        )
+    )
     while True:
         try:
             user_message = input()

@@ -14,20 +14,17 @@ R = TypeVar("R")
 FOREGROUND_MAX_TIMEOUT=600
 # From hermes file_tools.py, vision_tools.py, terminal_tool.py,
 
-REGISTRY: dict[str, Callable[P,R]] = {}
+# REGISTRY: dict[str, Callable[P,R]] = {}
+    
+# def load(name: str) -> Callable[P,R]:
+#     return REGISTRY.get(name)
 
-def register(func: Callable[P,R]) -> None:
-    REGISTRY[func.tool_definition["name"]] = func
+# def list_all() -> dict[str, Callable[P,R]]:
+#     return REGISTRY
 
-def load(name: str) -> Callable[P,R]:
-    return REGISTRY.get(name)
-
-def list_all() -> dict[str, Callable[P,R]]:
-    return REGISTRY
-
-def _registered(func: Callable[P,R]):
-    register(func)
-    return func
+# def _registered(func: Callable[P,R]):
+#     REGISTRY[func.tool_definition["name"]] = func
+#     return func
     
 
 @dataclass
@@ -38,73 +35,98 @@ class ToolError:
         return {
             "error": self.error
         }
-    # path: str
-    # total_lines: str
-    # file_size: str
 
-@_registered
-@tool
-def read_file(
-    path: Annotated[str, Field(
-        description="Path to the file to read (absolute, relative, or ~/path)",
-    )],
-    offset: Annotated[int, Field(
-        description="Line number to start reading from (1-indexed, default: 1)",
-        ge=1,
-    )] = 1,
-    limit: Annotated[int, Field(
-        description="Maximum number of lines to read (default: 500, max: 2000)",
-        le=2000,
-    )] = 500,
-) -> str:
-    """Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. 
-    Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. 
-    Reads exceeding ~100K characters are rejected; use offset and limit to read specific sections of large files. 
-    
-    NOTE: Cannot read images or binary files
-    """
-    # — use vision_analyze for images.
-    # TODO
-    offset = int(offset)
-    limit = int(limit)
+def make_tools(file_accessor: file_op.FileAccessor) -> dict[str,Callable[P,R]]:
+    @tool
+    def read_file(
+        path: Annotated[str, Field(
+            description="Path to the file to read (absolute, relative, or ~/path)",
+        )],
+        offset: Annotated[int, Field(
+            description="Line number to start reading from (1-indexed, default: 1)",
+            ge=1,
+        )] = 1,
+        limit: Annotated[int, Field(
+            description="Maximum number of lines to read (default: 500, max: 2000)",
+            le=2000,
+        )] = 500,
+    ) -> str:
+        """Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. 
+        Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. 
+        Reads exceeding ~100K characters are rejected; use offset and limit to read specific sections of large files. 
+        
+        NOTE: Cannot read images or binary files
+        """
+        # — use vision_analyze for images.
+        # TODO
+        offset = int(offset)
+        limit = int(limit)
 
-    # normalize
-    if offset < 0:
-        offset = 0
-    if limit < 0:
-        limit = 0
-    elif limit > 2000:
-        limit = 2000
-    
-    fa = file_op.FileAccessor(
-        blacklist=[],
-        whitelist=[]
-    )
-    read_result = fa.read_file(path, offset, limit)
-    return json.dumps(read_result.to_dict())
+        # normalize
+        if offset < 0:
+            offset = 0
+        if limit < 0:
+            limit = 0
+        elif limit > 2000:
+            limit = 2000
+        
+        read_result = file_accessor.read_file(path, offset, limit)
+        return json.dumps(read_result.to_dict())
 
-@_registered
-@tool
-def write_file(
-    path: Annotated[str, Field(
-        description="Path to the file to write (will be created if it doesn't exist, overwritten if it does)",
-    )],
-    content: Annotated[str, Field(
-        description="Complete content to write to the file",
-    )],
-):
-    """
-    Write content to a file, completely replacing existing content. Use this instead of echo/cat heredoc in terminal. 
-    Creates parent directories automatically. OVERWRITES the entire file — use 'patch' for targeted edits. 
-    Auto-runs syntax checks on .py/.json/.yaml/.toml and other linted languages; only NEW errors introduced by this write are surfaced (pre-existing errors are filtered out).
-    """
-    
-    fa = file_op.FileAccessor(
-        blacklist=[],
-        whitelist=[]
-    )
-    read_result = fa.write_file(path, content)
-    return json.dumps(read_result.to_dict())
+    @tool
+    def write_file(
+        path: Annotated[str, Field(
+            description="Path to the file to write (will be created if it doesn't exist, overwritten if it does)",
+        )],
+        content: Annotated[str, Field(
+            description="Complete content to write to the file",
+        )],
+    ):
+        """
+        Write content to a file, completely replacing existing content. Use this instead of echo/cat heredoc in terminal. 
+        Creates parent directories automatically. OVERWRITES the entire file — use 'patch' for targeted edits. 
+        Auto-runs syntax checks on .py/.json/.yaml/.toml and other linted languages; only NEW errors introduced by this write are surfaced (pre-existing errors are filtered out).
+        """
+        
+        read_result = file_accessor.write_file(path, content)
+        return json.dumps(read_result.to_dict())
+
+    @tool
+    def search_files(
+        pattern: Annotated[
+            str, 
+            Field(description="Glob pattern (e.g., '*.py') for file search")
+        ],
+        path: Annotated[
+            str, 
+            Field(default=".", description="Directory or file to search in (default: current working directory)")
+        ] = ".",
+        limit: Annotated[
+            int, 
+            Field(default=50, description="Maximum number of results to return (default: 50)")
+        ] = 50,
+        offset: Annotated[
+            int, 
+            Field(default=0, description="Skip first N results for pagination (default: 0)")
+        ] = 0,
+    ):
+        offset = int(offset)
+        limit = int(limit)
+
+        # normalize
+        if offset < 0:
+            offset = 0
+        if limit < 0:
+            limit = 0
+
+        read_result = file_accessor.search_files(pattern, path, limit, offset)
+        return json.dumps(read_result.to_dict())
+
+    return {
+        "read_file": read_file,
+        "write_file": write_file,
+        "search_files": search_files
+    }
 
 # @tool
 # def search_files(

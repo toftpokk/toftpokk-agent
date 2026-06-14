@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PurePath
 import os
 import json
 from dataclasses import dataclass
@@ -39,6 +39,22 @@ class ReadOutput:
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None and v != []}
 
+@dataclass
+class SearchFilesError:
+    error: str
+
+    def to_dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if v is not None and v != []}
+
+@dataclass
+class SearchFilesOutput:
+    files: list[str]
+    files_count: int
+    total_files: int
+
+    def to_dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if v is not None and v != []}
+
 
 class FileAccessor:
     """
@@ -46,26 +62,26 @@ class FileAccessor:
 
     Whitelist overrides blacklist and blocklist if set.
     """
-    blacklist_prefix: list[Path]
-    whitelist_prefix: list[Path]
+    blacklist_glob: list[Path]
+    whitelist_glob: list[Path]
     blocklist_prefix: list[Path]
     sensitive_suffix: list[Path]
 
     def __init__(self, blacklist: [str] = [], whitelist: [str] = []):
-        self.blacklist_prefix = []
-        self.whitelist_prefix = []
+        self.blacklist_glob = []
+        self.whitelist_glob = []
         for p in blacklist:
             try:
                 path = Path(p)
             except RuntimeError:
                 raise InvalidUserPathError(f"failed to expand '{p}'")
-            self.blacklist_prefix.append(path)
+            self.blacklist_glob.append(path)
         for p in whitelist:
             try:
                 path = Path(p)
             except RuntimeError:
                 raise InvalidUserPathError(f"failed to expand '{p}'")
-            self.whitelist_prefix.append(path)
+            self.whitelist_glob.append(path)
         
         self.blocklist_prefix = []
         blocklist_prefix = [
@@ -214,7 +230,90 @@ class FileAccessor:
             bytes_written=bytes_written,
             dirs_created=dirs_created,
         )
+    
+    # def search_content(
+    #     self, pattern: str, path: str, file_glob: Optional[str],
+    #     limit: int, offset: int, output_mode: str, context: int):
+    #     if offset < 0:
+    #         raise ValueError(f"offset should be non-negative, currently '{offset}'")
+    #     if limit < 0:
+    #         raise ValueError(f"limit should be non-negative, currently '{limit}'")
+    #     """Equivalent to: grep -r pattern path"""
+    #     root = Path(path).expanduser().resolve()
+    #     regex = re.compile(pattern)
+    #     matches = []
+        
+    #     # Define glob pattern
+    #     glob_pattern = file_glob if file_glob else "**/*"
+        
+    #     # Iterate over files
+    #     for file_path in root.rglob(glob_pattern):
+    #         if not file_path.is_file():
+    #             continue
+            
+    #         try:
+    #             with file_path.open("r", encoding="utf-8", errors="ignore") as f:
+    #                 lines = f.readlines()
+                    
+    #             for i, line in enumerate(lines):
+    #                 if regex.search(line):
+    #                     # Construct context
+    #                     start = max(0, i - context)
+    #                     end = min(len(lines), i + context + 1)
+    #                     context_lines = "".join(lines[start:end]).strip()
+                        
+    #                     matches.append(f"{file_path}:{i+1}: {context_lines}")
+                        
+    #                     # Memory Optimization: Stop if we have enough matches
+    #                     # (Only works if not needing to aggregate all before slicing)
+    #                     if len(matches) > (offset + limit):
+    #                         break
+    #         except (PermissionError, OSError):
+    #             continue
+                
+    #     return matches[offset : offset + limit]
+        
+    
+    def search_files(self, pattern: str, path: str, limit: int, offset: int) -> SearchFilesOutput | SearchFilesError:
+        if offset < 0:
+            raise ValueError(f"offset should be non-negative, currently '{offset}'")
+        if limit < 0:
+            raise ValueError(f"limit should be non-negative, currently '{limit}'")
+        """Equivalent to: find path -name "*pattern*" """
+        
+        root = FileAccessor._canonicalize_path(path)
 
+        target_destination = (root / pattern).resolve()
+        if not target_destination.is_relative_to(root):
+            return SearchFilesError(
+                error=f"pattern '{pattern}' needs to be relative to the root path"
+            )
+
+        stripped = pattern.strip()
+        if not stripped or stripped in (".", ".."):
+            return SearchFilesError(
+                error=f"pattern '{pattern}' is invalid, try '*' or '**'"
+            )
+        if PurePath(stripped).is_absolute():
+            return SearchFilesError(
+                error=f"pattern '{pattern}' must be a relative pattern"
+            )
+        
+        if "**" in stripped:
+            # Recursive mode
+            files_iterator = root.rglob(stripped)
+        else:
+            # Flat mode (only children of the root)
+            files_iterator = root.glob(stripped)
+
+        files = [str(Path(f).resolve()) for f in files_iterator if f.is_file()]
+        listed_files = files[offset : offset + limit]
+
+        return SearchFilesOutput(
+            files=listed_files,
+            files_count=len(listed_files),
+            total_files=len(files)
+        )
 
     def _canonicalize_path(path: str) -> Path:
         try:
@@ -224,19 +323,19 @@ class FileAccessor:
         return canonical_path
     
     def _permission_check(self, canonical_path: Path):
-        if len(self.whitelist_prefix) > 0:
-            for allowed_zone in self.whitelist_prefix:
-                if canonical_path.is_relative_to(allowed_zone):
+        if len(self.whitelist_glob) > 0:
+            for pattern in self.whitelist_glob:
+                if canonical_path.match(pattern):
                     return
             raise PermissionError(f"'{canonical_path}' is not in the whitelist")
         
-        for blocked_zone in self.blacklist_prefix:
-            if canonical_path.is_relative_to(blocked_zone):
+        for pattern in self.blacklist_glob:
+            if canonical_path.match(pattern):
                 raise PermissionError(f"'{canonical_path}' is blacklisted")
         
         for blocked_zone in self.blocklist_prefix:
             if canonical_path.is_relative_to(blocked_zone):
-                raise PermissionError(f"'{canonical_path}' is a device file that would block or produce infinite output")
+                raise PermissionError(f"'{canonical_path}' is a device path that would block or produce infinite output")
         
         for blocked_suffix in self.sensitive_suffix:
             suffix_len = len(blocked_suffix.parts)
@@ -245,7 +344,7 @@ class FileAccessor:
                 raise PermissionError(f"'{canonical_path}' is a sensitive file")
         
         if self._is_blocked_device_path(canonical_path):
-            raise PermissionError(f"'{canonical_path}' is a device file that would block or produce infinite output")
+            raise PermissionError(f"'{canonical_path}' is a device path that would block or produce infinite output")
 
     def _is_blocked_device_path(self, canonical_path: Path) -> bool:
         path_str = str(canonical_path)
